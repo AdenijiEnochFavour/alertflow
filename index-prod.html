@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlertFlow — Real-Time Market Alerts [PRODUCTION]</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    * {box-sizing: border-box; margin: 0; padding: 0}
+    :root {
+      --bg: #0a0c10; --bg2: #0f1218; --bg3: #141820; --bg4: #1a2030;
+      --border: #ffffff12; --border2: #ffffff20; --border3: #ffffff35;
+      --text: #e8eaf0; --text2: #8892a4; --text3: #4a5568;
+      --blue: #3b82f6; --blue2: #1d4ed8; --green: #10b981; --red: #ef4444;
+      --font: 'Syne', sans-serif; --mono: 'JetBrains Mono', monospace;
+    }
+    html, body {height: 100%; background: var(--bg); color: var(--text); font-family: var(--font)}
+    body {display: flex; flex-direction: column; overflow: hidden}
+    .topbar {height: 48px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 16px; flex-shrink: 0; z-index: 10}
+    .brand {font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: #fff}
+    .brand span {color: var(--blue)}
+    .live-badge {display: flex; align-items: center; gap: 5px; font-size: 11px; font-family: var(--mono); color: var(--green); background: #10b98118; padding: 3px 8px; border-radius: 4px; border: 1px solid #10b98130}
+    .live-dot {width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 1.2s infinite}
+    @keyframes pulse {0%, 100% {opacity: 1; transform: scale(1)} 50% {opacity: 0.5; transform: scale(0.8)}}
+    .topbar-right {margin-left: auto; display: flex; align-items: center; gap: 10px}
+    .time-display {font-family: var(--mono); font-size: 12px; color: var(--text2)}
+    .alert-count-badge {background: var(--blue); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 12px; font-family: var(--mono)}
+    .layout {display: flex; flex: 1; overflow: hidden}
+    .sidebar {width: 240px; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0}
+    .search-box {padding: 10px; border-bottom: 1px solid var(--border)}
+    .search-box input {width: 100%; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 7px 10px; color: var(--text); font-size: 12px; font-family: var(--font); outline: none; transition: border .15s}
+    .search-box input:focus {border-color: var(--blue)}
+    .cat-scroll {display: flex; gap: 0; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: none}
+    .cat-btn {flex-shrink: 0; padding: 8px 12px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--text3); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all .15s; font-family: var(--font); white-space: nowrap}
+    .cat-btn:hover {color: var(--text2)}
+    .cat-btn.active {color: var(--blue); border-bottom-color: var(--blue)}
+    .ticker-list {flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border2) transparent}
+    .ticker-row {padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background .1s; display: flex; align-items: center; justify-content: space-between; gap: 8px}
+    .ticker-row:hover {background: var(--bg3)}
+    .ticker-row.active {background: #3b82f615; border-left: 2px solid var(--blue)}
+    .ticker-left .sym {font-size: 12px; font-weight: 600; color: var(--text); font-family: var(--mono)}
+    .ticker-left .nm {font-size: 10px; color: var(--text3); margin-top: 1px; max-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis}
+    .ticker-right {text-align: right; flex-shrink: 0}
+    .ticker-right .pr {font-size: 12px; font-family: var(--mono); color: var(--text)}
+    .ticker-right .ch {font-size: 10px; font-family: var(--mono)}
+    .up {color: var(--green)}
+    .dn {color: var(--red)}
+    .main {flex: 1; display: flex; flex-direction: column; overflow: hidden}
+    .ticker-header {padding: 12px 18px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; flex-shrink: 0; flex-wrap: wrap}
+    .th-sym {font-size: 18px; font-weight: 700; font-family: var(--mono); color: #fff}
+    .th-price {font-size: 22px; font-weight: 600; font-family: var(--mono)}
+    .th-chg {font-size: 13px; font-family: var(--mono); padding: 3px 8px; border-radius: 4px}
+    .th-chg.up {background: #10b98118; color: var(--green)}
+    .th-chg.dn {background: #ef444418; color: var(--red)}
+    .chart-area {height: 220px; background: var(--bg2); border-bottom: 1px solid var(--border); position: relative; flex-shrink: 0}
+    canvas#priceChart {width: 100%; height: 100%}
+    .alerts-panel {flex: 1; overflow-y: auto; padding: 14px 18px; scrollbar-width: thin; scrollbar-color: var(--border2) transparent}
+    .panel-head {display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px}
+    .panel-title {font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--text2); text-transform: uppercase}
+    .statusbar {height: 24px; background: var(--bg2); border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 16px; font-size: 10px; font-family: var(--mono); color: var(--text3); flex-shrink: 0}
+    .export-btn {background: none; border: 1px solid var(--border2); color: var(--text2); font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer; font-family: var(--font); transition: all .15s}
+    .export-btn:hover {border-color: var(--blue); color: var(--blue)}
+    .auth-gate {position: fixed; inset: 0; background: var(--bg); z-index: 200; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px}
+    .auth-box {background: var(--bg2); border: 1px solid var(--border2); border-radius: 12px; padding: 40px; max-width: 500px; text-align: center}
+    .auth-box h1 {font-size: 24px; margin-bottom: 10px; color: #fff}
+    .auth-box p {color: var(--text2); margin-bottom: 20px; line-height: 1.6}
+    .auth-input {width: 100%; padding: 10px; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); border-radius: 6px; font-family: var(--mono); margin-bottom: 10px; font-size: 13px}
+    .btn-alert {background: var(--blue); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: var(--font); transition: background .15s}
+    .btn-alert:hover {background: var(--blue2)}
+  </style>
+</head>
+
+<body>
+
+  <div class="topbar">
+    <div class="brand">Alert<span>Flow</span></div>
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      <span id="backendStatus">CONNECTING...</span>
+    </div>
+    <div class="time-display" id="clockEl">--:--:-- NY</div>
+    <div class="topbar-right">
+      <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">Alerts:</span>
+      <span class="alert-count-badge" id="topAlertCount">0</span>
+      <button class="export-btn" onclick="exportAlerts()">⬇ Export</button>
+      <button class="export-btn" onclick="logout()">🚪 Logout</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="search-box">
+        <input id="searchInput" type="text" placeholder="Search symbol or name…" oninput="renderList()" />
+      </div>
+      <div class="cat-scroll" id="catScroll"></div>
+      <div class="ticker-list" id="tickerList"></div>
+    </div>
+
+    <div class="main">
+      <div class="ticker-header" id="tickerHeader">
+        <div style="color:var(--text3);font-size:13px">Select a market from the sidebar</div>
+      </div>
+
+      <div class="chart-area"><canvas id="priceChart"></canvas></div>
+
+      <div class="alerts-panel">
+        <div class="panel-head">
+          <span class="panel-title">Active Alerts</span>
+        </div>
+        <div id="alertsContainer"><div class="no-alerts-msg"><p>No alerts yet.</p></div></div>
+      </div>
+
+      <div class="statusbar">
+        <span id="sbTicker">—</span>
+        <span>|</span>
+        <span id="sbPrice">Price: —</span>
+        <span>|</span>
+        <span id="sbOHLC">O: — H: — L: —</span>
+        <span style="margin-left:auto" id="sbTime">—</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="auth-gate" id="authGate">
+    <div class="auth-box">
+      <h1>🔐 AlertFlow Admin</h1>
+      <p>Production Backend • Real-time Crypto • Delayed Forex/Indices</p>
+      <input type="email" id="adminEmail" class="auth-input" placeholder="admin@alertflow.com" value="admin@alertflow.com" />
+      <input type="password" id="adminPassword" class="auth-input" placeholder="Password" value="Change in .env" />
+      <button class="btn-alert" onclick="adminLogin()" style="width:100%;margin-top:20px">🔓 Login</button>
+      <p style="font-size:10px;margin-top:20px;color:var(--text3)">Default: admin@alertflow.com / Change in .env</p>
+      <p style="font-size:9px;margin-top:10px;color:var(--green)">✅ Backend: http://localhost:3001</p>
+    </div>
+  </div>
+
+  <script>
+    const BACKEND_URL = 'http://localhost:3001';
+    const MARKETS = [
+      {s:'BTC/USD',n:'Bitcoin',c:'Crypto',symbol:'BTCUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'ETH/USD',n:'Ethereum',c:'Crypto',symbol:'ETHUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'BNB/USD',n:'Binance Coin',c:'Crypto',symbol:'BNBUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'SOL/USD',n:'Solana',c:'Crypto',symbol:'SOLUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'XRP/USD',n:'Ripple',c:'Crypto',symbol:'XRPUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'ADA/USD',n:'Cardano',c:'Crypto',symbol:'ADAUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'DOGE/USD',n:'Dogecoin',c:'Crypto',symbol:'DOGEUSDT',p:0,_base:0,_open:0,_high:0,_low:0},
+      {s:'EUR/USD',n:'Euro / USD',c:'Forex',symbol:'c:EURUSD',p:1.08452,_base:1.08,_open:1.082,_high:1.090,_low:1.080},
+      {s:'GBP/USD',n:'Pound / USD',c:'Forex',symbol:'c:GBPUSD',p:1.27103,_base:1.27,_open:1.268,_high:1.275,_low:1.265},
+      {s:'USD/JPY',n:'USD / Yen',c:'Forex',symbol:'c:USDJPY',p:149.824,_base:150,_open:149.5,_high:150.5,_low:149.0},
+      {s:'USD/CAD',n:'USD / CAD',c:'Forex',symbol:'c:USDCAD',p:1.3642,_base:1.36,_open:1.362,_high:1.368,_low:1.360},
+      {s:'AUD/USD',n:'AUD / USD',c:'Forex',symbol:'c:AUDUSD',p:0.6742,_base:0.67,_open:0.673,_high:0.676,_low:0.671},
+      {s:'SPX500',n:'S&P 500',c:'Indices',symbol:'I:SPX',p:5248.30,_base:5240,_open:5245,_high:5260,_low:5235},
+      {s:'NAS100',n:'Nasdaq 100',c:'Indices',symbol:'I:IXN',p:18312.5,_base:18300,_open:18305,_high:18350,_low:18280},
+      {s:'DJ30',n:'Dow Jones',c:'Indices',symbol:'I:INDU',p:39140.2,_base:39120,_open:39135,_high:39200,_low:39100},
+      {s:'VIX',n:'Volatility Index',c:'Synthetics',symbol:'VIX',p:14.82,_base:15,_open:14.5,_high:16,_low:14},
+      {s:'BOOM500',n:'Boom 500 Index',c:'Synthetics',symbol:'BOOM500',p:16842.5,_base:16800,_open:16820,_high:17000,_low:16700},
+      {s:'CRASH500',n:'Crash 500 Index',c:'Synthetics',symbol:'CRASH500',p:7821.40,_base:7800,_open:7810,_high:8000,_low:7700},
+      {s:'V10',n:'Volatility 10',c:'Synthetics',symbol:'V10',p:10242.50,_base:10200,_open:10220,_high:10500,_low:10100}
+    ];
+    const CATEGORIES=['All','Crypto','Forex','Indices','Synthetics'];
+    let selected=null,currentCat='All',backendConnected=false;
+    function fmt(v){if(!v||v===0)return'—';if(v>=10000)return v.toFixed(1);if(v>=1000)return v.toFixed(2);if(v>=10)return v.toFixed(3);if(v>=0.1)return v.toFixed(4);return v.toFixed(7)}
+    function fmtChg(v){return(v>=0?'+':'')+v.toFixed(2)+'%'}
+    async function fetchPrices(){try{const resp=await fetch(`${BACKEND_URL}/api/prices/all`);const data=await resp.json();backendConnected=true;document.getElementById('backendStatus').textContent='✅ LIVE';for(const symbol of Object.keys(data.crypto)){const m=MARKETS.find(x=>x.symbol===symbol);if(m&&data.crypto[symbol].p){m.p=data.crypto[symbol].p;m._base=m._base||m.p;m._open=data.crypto[symbol].o;m._high=data.crypto[symbol].h;m._low=data.crypto[symbol].l}}for(const pair of Object.keys(data.forex)){const m=MARKETS.find(x=>x.symbol===pair);if(m&&data.forex[pair].p)m.p=data.forex[pair].p}for(const idx of Object.keys(data.indices)){const m=MARKETS.find(x=>x.symbol===idx);if(m&&data.indices[idx].p)m.p=data.indices[idx].p}updateUI()}catch(e){backendConnected=false;document.getElementById('backendStatus').textContent='❌ OFFLINE';console.error('Backend fetch failed:',e)}}
+    function adminLogin(){const email=document.getElementById('adminEmail').value;const pwd=document.getElementById('adminPassword').value;if(email==='admin@alertflow.com'&&pwd==='Change in .env'){localStorage.setItem('alertflow_admin','true');document.getElementById('authGate').style.display='none';initApp()}else{alert('❌ Wrong credentials!')}}
+    function logout(){localStorage.removeItem('alertflow_admin');location.reload()}
+    function initApp(){buildCats();renderList();updateClock();setInterval(updateClock,1000);setInterval(fetchPrices,1000);fetchPrices()}
+    function buildCats(){document.getElementById('catScroll').innerHTML=CATEGORIES.map(c=>`<button class="cat-btn${c==='All'?" active":"}">onclick="setCategory('${c}',this)">${c}</button>`).join('')}
+    function setCategory(c,b){currentCat=c;document.querySelectorAll('.cat-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderList()}
+    function renderList(){const q=document.getElementById('searchInput').value.toLowerCase();const items=MARKETS.filter(m=>(currentCat==='All'||m.c===currentCat)&&(!q||m.s.toLowerCase().includes(q)||m.n.toLowerCase().includes(q)));document.getElementById('tickerList').innerHTML=items.map(m=>{const chg=m._base?(m.p-m._base)/m._base*100:0;const isUp=chg>=0;const isSel=selected&&selected.s===m.s;return`<div class="ticker-row${isSel?' active':''}">onclick="selectMarket('${m.s}')">
+          <div class="ticker-left"><div class="sym">${m.s}</div><div class="nm">${m.n}</div></div>
+          <div class="ticker-right"><div class="pr">${fmt(m.p)}</div><div class="ch ${isUp?'up':'dn'}">${fmtChg(chg)}</div></div>
+        </div>`}).join('')}
+    function selectMarket(s){selected=MARKETS.find(m=>m.s===s);renderList();updateHeader();updateStatusBar()}
+    function updateHeader(){if(!selected)return;const m=selected;const chg=m._base?(m.p-m._base)/m._base*100:0;const isUp=chg>=0;document.getElementById('tickerHeader').innerHTML=`
+        <div><div class="th-sym">${m.s}</div><div style="font-size:10px;color:var(--text3)">${m.n} · ${m.c}</div></div>
+        <div class="th-price ${isUp?'up':'dn'}">${fmt(m.p)}</div>
+        <div class="th-chg ${isUp?'up':'dn'}">${fmtChg(chg)}</div>`}
+    function updateStatusBar(){if(!selected)return;const m=selected;document.getElementById('sbTicker').textContent=m.s;document.getElementById('sbPrice').textContent=`Price: ${fmt(m.p)}`;document.getElementById('sbOHLC').textContent=`O: ${fmt(m._open)} H: ${fmt(m._high)} L: ${fmt(m._low)}`;document.getElementById('sbTime').textContent=new Date().toLocaleTimeString('en-US',{hour12:false,timeZone:'America/New_York'})}
+    function exportAlerts(){alert('Export feature coming soon')}
+    function updateClock(){const ny=new Date().toLocaleTimeString('en-US',{hour12:false,timeZone:'America/New_York'});document.getElementById('clockEl').textContent=ny+' NY'}
+    function updateUI(){renderList();if(selected){updateHeader();updateStatusBar()}}
+    if(localStorage.getItem('alertflow_admin')){document.getElementById('authGate').style.display='none';initApp()}else{document.getElementById('authGate').style.display='flex'}
+  </script>
+
+</body>
+
+</html>
